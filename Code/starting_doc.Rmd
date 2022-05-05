@@ -22,14 +22,14 @@ proj.path <- getwd()
 # Helper Scripts
 
 ## Load libraries
-source(paste0(proj.path,"/Code/libraries.R"))
+source(paste0(proj.path,"/libraries.R"))
 
 
 ## Load functions
-source(paste0(proj.path,"/Code/functions.R"))
+source(paste0(proj.path,"/functions.R"))
 
 ## Load custom plot settings
-source(paste0(proj.path,"/Code/plot_settings.R"))
+source(paste0(proj.path,"/plot_settings.R"))
 
 # Set important paths
 
