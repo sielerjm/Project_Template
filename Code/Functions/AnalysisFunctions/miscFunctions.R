@@ -1,26 +1,23 @@
-# Functions
+# Misc Functions
 
 
-# -------------------------------------------------------------------------
-# Description: 
-# Input: 
-# Output: 
+# Save Environment File ---------------------------------------------------
+#   Description: Finds the latest R environment file
+#   Input: path name to Robjects directory
+#   Output: saves environment file with current date
 
-
-
-
-# -------------------------------------------------------------------------
-# Description: 
-# Input: 
-# Output: 
-
-
-
-# -------------------------------------------------------------------------
-# Description: 
-# Input: 
-# Output: 
-
+save_env <- function(
+  obj.path, 
+  ID = Sys.Date(), 
+  extra_info = NA
+  ){
+  
+  if(is.na(extra_info)){
+    save.image(paste0(obj.path, "/environment", ID, "_ENV.RData"))
+  } else{
+    save.image(paste0(obj.path, "/environment_", extra_info, ID, "_ENV.RData"))
+  }
+}
 
 
 
@@ -178,6 +175,22 @@
 # Description: 
 # Input: 
 # Output: 
+
+
+
+# -------------------------------------------------------------------------
+# Description: 
+# Input: 
+# Output: 
+
+
+
+
+# -------------------------------------------------------------------------
+# Description: 
+# Input: 
+# Output: 
+
 
 
 
