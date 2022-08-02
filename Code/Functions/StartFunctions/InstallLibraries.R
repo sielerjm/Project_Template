@@ -1,7 +1,6 @@
 
 # Install Libraries -------------------------------------------
 
-install.packages("dev.tools")
 
 ## Bioconductor Packages ---------------------------------------------------
 
@@ -13,6 +12,7 @@ for (pkg in c(
               # General Packages
                 "knitr",
                 "tinytex",
+                "devtools",
                 
               # Microbiome Packages
                 "dada2", 
@@ -57,13 +57,6 @@ for (pkg in c(
 }
 
 
-
-## Other Microbiome Packages -----------------------------------------------
-
-devtools::install_github("ggloor/CoDaSeq/CoDaSeq")
-devtools::install_github("kstagaman/phyloseqCompanion")
-
-
 ## NonBioconductor Packages
 
 install.packages("easystats", repos = "https://easystats.r-universe.dev")
@@ -103,3 +96,9 @@ for (pkg in c('RUnit', 'wk', 'TTR', 'misc3d', 'mi', 'kutils', 'corrplot',
     BiocManager::install(pkg)
   }
 }
+
+
+## Other Microbiome Packages -----------------------------------------------
+
+devtools::install_github("ggloor/CoDaSeq/CoDaSeq")
+devtools::install_github("kstagaman/phyloseqCompanion")

@@ -7,7 +7,7 @@
 
 
 # General -----------------------------------------------------------------
-library(dev.tools)  # For downloading packages from github
+library(devtools)  # For downloading packages from github
 library(data.table)  # Handle data tables
 library(flextable)  # Making pretty tables
 library(forcats)  # suite of useful tools that solve common problems with factors
@@ -16,7 +16,7 @@ library(lubridate)  # Help with time series data wrangling
 library(parallel)  # Parallel processing functions
 library(rcompanion)  # Allows us to run transformTukey()
 library(readxl)  # Import Excel docs
-library(RedoControl)  # Used to determine whether or not to rerun a code chunk
+# library(RedoControl)  # Used to determine whether or not to rerun a code chunk
 library(tinytex)  # Knitting and using LaTeX formatting
 
 
