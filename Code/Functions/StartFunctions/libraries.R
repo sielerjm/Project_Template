@@ -7,6 +7,7 @@
 
 
 # General -----------------------------------------------------------------
+library(dev.tools)  # For downloading packages from github
 library(data.table)  # Handle data tables
 library(flextable)  # Making pretty tables
 library(forcats)  # suite of useful tools that solve common problems with factors
