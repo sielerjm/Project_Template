@@ -1,4 +1,4 @@
-# Alpha Diversity Functions
+# Beta Diversity Functions
 
 
 
@@ -16,7 +16,7 @@
 #   Output: 
 
 set_names_beta <- function(x) {
-  setNames(x, methods.beta)
+  setNames(x, div.mtd[["beta"]])
 }
 
 
@@ -33,8 +33,8 @@ beta_anova <- function(beta.model, methods, names, num.cores = num.cores){
   
   # Assigns number of cores/threads for parallel computing (aka %dopar%) 
   # num.cores = 4
-  cl <- makeCluster(num.cores, type = "FORK", outfile = "")
-  registerDoParallel(cl, num.cores)
+  cl <- parallel::makeCluster(num.cores, type = "FORK", outfile = "")
+  doParallel::registerDoParallel(cl, num.cores)
   
   # Anova
   res <- foreach(
@@ -43,18 +43,18 @@ beta_anova <- function(beta.model, methods, names, num.cores = num.cores){
     .verbose = TRUE
   ) %dopar% {
     mod <- beta.model[[beta]]
-    anova(mod, by = "term") %>% 
+    car::Anova(mod, type = 2) %>% 
       # tidy() %>% 
-      as_tibble(rownames = "term") %>%
-      rename("p.value" = "Pr(>F)" ,
+      tidyr::as_tibble(rownames = "term") %>%
+      dplyr::rename("p.value" = "Pr(>Chisq)" ,
              "statistic" = "F") %>%
-      mutate(sig = ifelse(p.value <= 0.05, "*", "")) %>%
-      mutate(metric = beta, .before = 1) %>%
-      arrange(desc(statistic))  # highest to lowest effect size 
+      dplyr::mutate(sig = ifelse(p.value <= 0.05, "*", "")) %>%
+      dplyr::mutate(metric = beta, .before = 1) %>%
+      dplyr::arrange(desc(statistic))  # highest to lowest effect size 
   } %>%
-    bind_rows()
+    dplyr::bind_rows()
   
-  stopCluster(cl)
+  parallel::stopCluster(cl)
   return(res)
 }
 
@@ -167,45 +167,287 @@ beta_hom_disper <- function(data, physeq, vars, methods = "bray", plot = F, fact
 #   Output: statistical model
 
 
-full_dbrda_model  <- function(vars, distance, methods, names, physeq, data, terms = 1, num.cores = num.cores){  
+full_dbrda_model  <- function(vars, distance, methods, names = set_names_beta, physeq, terms = 1, num.cores = 8){  
+  
+  tmp.ps.obj <- physeq # temporary phyloseq object
   
   # Starts parallel computing
-  cl <- makeCluster(num.cores, type = "FORK", outfile = "")
-  registerDoParallel(cl, num.cores)
+  cl <- parallel::makeCluster(num.cores, type = "FORK", outfile = "")
+  doParallel::registerDoParallel(cl, num.cores)
+  
+  tmp.data <-
+    tmp.ps.obj %>%
+    microViz::samdat_tbl()
   
   # Build full model
-  beta.model.full <- foreach(
+  beta.model.full <- foreach::foreach(
     beta = methods,
     .final = names,
     .verbose = TRUE
   ) %dopar% {
     # progress_Bar_Start(which(methods == beta), length(methods))  # Progress bar
-    dist.mat <- distance[[beta]]
-    form <- if(length(vars) == 1){
-      paste0("dist.mat ~ ", vars)
+    dist.mat <- distance[[beta]] %>% microViz::dist_get()
+    form <- if(terms == 1){
+      paste0("dist.mat ~ ", paste0(vars, collapse = "+"))
+    } else if (terms == 2) {
+      paste0("dist.mat ~ ", paste0(vars, collapse = ":"))
     } else{paste0("dist.mat ~ (", paste0(vars, collapse = "+") ,")^", terms)}
-    print(form)  #  TEST
-    capscale(as.formula(form),
-             data = data,
-             na.action = na.omit # na.omit only non-missing site scores are shown
+    cat(form)  #  TEST
+    vegan::capscale(as.formula(form),
+             data = tmp.data,
+             na.action = na.omit, # na.omit only non-missing site scores are shown
+             sqrt.dist = F # square roots of dissimilarities to avoid negative eigenvalues
              #comm = otu.matrix(physeq)  # Error might originate here, I think
     )
   }
   
-  stopCluster(cl)
+  parallel::stopCluster(cl)
   return(beta.model.full)
   
 }
 
+# Beta Capscale  --------------------------------------------------------------
+#   Description: Distance based redundancy analysis beta diversity metrics
+#   Input: variables, distance list, beta methods, method names, phyloseq obj
+#   Output: statistical model
+
+
+capscale_model  <- function(vars, distance, methods, names = set_names_beta, physeq, num.cores = 8){  
+  
+  tmp.ps.obj <- physeq # temporary phyloseq object
+  
+  # Starts parallel computing
+  cl <- parallel::makeCluster(num.cores, type = "FORK", outfile = "")
+  doParallel::registerDoParallel(cl, num.cores)
+  
+  tmp.data <-
+    tmp.ps.obj %>%
+    microViz::samdat_tbl()
+  
+  # Build full model
+  beta.model.full <- foreach::foreach(
+    beta = methods,
+    .final = names,
+    .verbose = TRUE
+  ) %dopar% {
+    # progress_Bar_Start(which(methods == beta), length(methods))  # Progress bar
+    dist.mat <- distance[[beta]] %>% microViz::dist_get()
+    form <-
+      paste0("dist.mat ~ (", vars,")")
+      
+    cat(form)  #  TEST
+    vegan::capscale(as.formula(form),
+                    data = tmp.data,
+                    na.action = na.omit, # na.omit only non-missing site scores are shown
+                    sqrt.dist = F # square roots of dissimilarities to avoid negative eigenvalues
+                    #comm = otu.matrix(physeq)  # Error might originate here, I think
+    )
+  }
+  
+  parallel::stopCluster(cl)
+  return(beta.model.full)
+  
+}
+
+
+
+# Parallell dbRDAs-------------------------------------------------------------------------
+# Description: Generate dbRDA ordinations with all Spatial Learning covariates
+# Input: 
+# Output: 
+# Source: https://doi.org/10.1038/s41598-021-83851-4
+#   Methods: https://static-content.springer.com/esm/art%3A10.1038%2Fs41598-021-83851-4/MediaObjects/41598_2021_83851_MOESM1_ESM.pdf
+
+
+par.dbrdas <- function(dist.mats, dbrda.frm, sample.data, nCores, verbose = TRUE) {
+  cl <- makeCluster(nCores, type = "FORK", outfile = "")
+  registerDoParallel(cl, nCores)
+  dbrda.list <- foreach(
+    n = names(dist.mats),
+    .final = function(x) setNames(x, names(dist.mats)),
+    .verbose = verbose
+  ) %dopar% {
+    dist <- dist.mats[[n]] %>% microViz::dist_get()
+    dbrda.obj <- vegan::capscale(as.formula(dbrda.frm), data = sample.data,
+                                 na.action = na.omit,
+                                 sqrt.dist = FALSE)
+    return(dbrda.obj)
+  }
+  stopCluster(cl)
+  return(dbrda.list)
+}
+
+
+
+# Ordistep -------------------------------------------------------------------------
+# Description: Use ordistep to select Spatial Learning covariates that explain the most variance in beta-diversity
+# Input: 
+# Output: 
+# Source: https://doi.org/10.1038/s41598-021-83851-4
+#   Methods: https://static-content.springer.com/esm/art%3A10.1038%2Fs41598-021-83851-4/MediaObjects/41598_2021_83851_MOESM1_ESM.pdf
+
+par.ordistep <- function(full.dbrdas, selectDirection, nCores, seed = 42, verbose = TRUE) {
+  cl <- makeCluster(nCores, type = "FORK")
+  registerDoParallel(cl, nCores)
+  dbrda.select.list <- foreach(
+    n = names(full.dbrdas),
+    .final = function(x) setNames(x, names(full.dbrdas)),
+    .verbose = verbose
+  ) %dopar% {
+    possibleDirections <- c("both", "forward", "reverse")
+    dbrda0 <- full.dbrdas[[n]]
+    set.seed(seed)
+    dbrda.select <- try(ordistep(dbrda0, direction = selectDirection), silent = T)
+    if ("try-error" %in% class(dbrda.select)) {
+      cat(
+        paste0(
+          "# ", Sys.time(), "\n",
+          "\tOrdistep on full model for ", n, " distance with `direction = ", 
+          selectDirection, "` failed."
+        ), 
+        file = ordi.log, 
+        sep = "\n", 
+        append = TRUE
+      )
+      for (newDirection in possibleDirections[possibleDirections != selectDirection]) {
+        cat(
+          paste0("\tTrying `direction = ", newDirection, "`..."), 
+          file = ordi.log, 
+          sep = " ", 
+          append = TRUE
+        )
+        set.seed(seed)
+        dbrda.select <- try(ordistep(dbrda0, direction = newDirection), silent = T)
+        if ("try-error" %in% class(dbrda.select)) {
+          cat(paste0("Failed."), file = ordi.log, sep = "\n", append = TRUE)
+        } else {
+          cat(paste0("Success"), file = ordi.log, sep = "\n", append = TRUE)
+          return(dbrda.select)
+        }
+      }
+    } else {
+      return(dbrda.select)
+    }
+  }
+  stopCluster(cl)
+  return(dbrda.select.list)
+}
+
+
+
+# ANOVA RDA -------------------------------------------------------------------------
+# Description: Significance assessment on ordistep-selected dbRDAs with permanova
+# Input: 
+# Output: 
+# Source: https://doi.org/10.1038/s41598-021-83851-4
+#   Methods: https://static-content.springer.com/esm/art%3A10.1038%2Fs41598-021-83851-4/MediaObjects/41598_2021_83851_MOESM1_ESM.pdf
+
+par.anova.rda <- function(
+    dbrdas, 
+    by.what = c("term", "margin", "axis"), 
+    perm.model = c("reduced", "direct", "full"),
+    nCores, 
+    seed = 42,
+    verbose = TRUE
+) {
+  cl <- makeCluster(nCores, type = "FORK", outfile = "")
+  registerDoParallel(cl, nCores)
+  dbrda.anova.list <- foreach(
+    n = names(dbrdas),
+    .final = function(x) setNames(x, names(dbrdas)),
+    .verbose = verbose
+  ) %dopar% {
+    dbrda.obj <- dbrdas[[n]]
+    set.seed(seed)
+    permanova <- 
+      anova(dbrda.obj, by = by.what, model = perm.model) %>% 
+      # tidy() %>% 
+      tidyr::as_tibble(rownames = "term") %>%
+      dplyr::rename("p.value" = "Pr(>F)" ,
+                    "statistic" = "F") %>%
+      dplyr::mutate(sig = case_when(
+        p.value <= 0.0001 ~ "****",
+        p.value <= 0.001 ~ "***",
+        p.value <= 0.01 ~ "**",
+        p.value < 0.05 ~ "*", 
+        p.value >= 0.05 ~ "ns")) %>%
+      dplyr::mutate(metric = n, .before = 1) %>%
+      dplyr::arrange(desc(statistic))  # highest to lowest effect size 
+    
+    return(permanova)
+  } %>%
+    dplyr::bind_rows()
+  stopCluster(cl)
+  return(dbrda.anova.list)
+}
+
+par.anova.rda_v2 <- function(
+    dbrdas, 
+    nCores, 
+    seed = 42,
+    verbose = TRUE
+) {
+  cl <- makeCluster(nCores, type = "FORK", outfile = "")
+  registerDoParallel(cl, nCores)
+  dbrda.anova.list <- foreach(
+    n = names(dbrdas),
+    .final = function(x) setNames(x, names(dbrdas)),
+    .verbose = verbose
+  ) %dopar% {
+    dbrda.obj <- dbrdas[[n]]
+    set.seed(seed)
+    permanova <- 
+      anova(dbrda.obj) %>% 
+      # tidy() %>% 
+      tidyr::as_tibble(rownames = "term") %>%
+      dplyr::rename("p.value" = "Pr(>F)" ,
+                    "statistic" = "F") %>%
+      dplyr::mutate(sig = case_when(
+        p.value <= 0.0001 ~ "****",
+        p.value <= 0.001 ~ "***",
+        p.value <= 0.01 ~ "**",
+        p.value < 0.05 ~ "*", 
+        p.value >= 0.05 ~ "ns")) %>%
+      dplyr::mutate(metric = n, .before = 1) %>%
+      dplyr::arrange(desc(statistic))  # highest to lowest effect size 
+    
+    return(permanova)
+  } %>%
+    dplyr::bind_rows()
+  stopCluster(cl)
+  return(dbrda.anova.list)
+}
+
+
+
+
 # -------------------------------------------------------------------------
 # Description: 
 # Input: 
 # Output: 
 
-
-
-# -------------------------------------------------------------------------
-# Description: 
-# Input: 
-# Output: 
-
+par.adonis.rda <- function(dist.mats, 
+                           dbrda.frm, 
+                           sample.data, 
+                           by.what = "margin",
+                           nCores, 
+                           verbose = TRUE) {
+  cl <- makeCluster(nCores, type = "FORK", outfile = "")
+  registerDoParallel(cl, nCores)
+  adonis.res.list <- foreach(
+    n = names(dist.mats),
+    .final = function(x) setNames(x, names(dist.mats)),
+    .verbose = verbose
+  ) %dopar% {
+    dist <- dist.mats[[n]] %>% microViz::dist_get()
+    adonis.res <- vegan::adonis2(as.formula(dbrda.frm), 
+                                 data = sample.data,
+                                 by = by.what,
+                                 na.action = na.omit,
+                                 sqrt.dist = FALSE)
+    
+    return(adonis.res)
+  }
+  stopCluster(cl)
+  return(adonis.res.list)
+}

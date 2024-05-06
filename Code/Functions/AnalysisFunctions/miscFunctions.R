@@ -226,28 +226,80 @@ gen_glm_anova <- function(tmp.mod, tmp.metric, filt.pval = 1){
 # Input: 
 # Output: 
 
+flextable_helperFuncs <- function(flextbl.obj,
+                                  col.round){
+  flextbl.obj %>%
+    # align(j = 3:6, align = "right") %>%
+    colformat_double(j = col.round, digits = 3) %>%
+    # merge_v(j = 1) %>%
+    set_formatter(values = list("p" = p_val_format,
+                                "p.adj" = p_val_format,
+                                "p.value" = p_val_format)
+                  ) %>%
+    # set_caption(paste0("Wilcoxon Test. p. adj: BH. Weight ~ Sex")) %>%
+    autofit()
+}
 
 
-# -------------------------------------------------------------------------
+
+# print glm formula -------------------------------------------------------------------------
 # Description: 
 # Input: 
 # Output: 
 
+glm_formula <- function(mod){
+  
+  return(
+    paste0("glm(",
+           mod[[1]][["formula"]],
+           ", family=",
+           mod[[1]][["family"]][["family"]],
+           ")")
+           )
+}
 
-
-
-# -------------------------------------------------------------------------
+# print capscale formula -------------------------------------------------------------------------
 # Description: 
 # Input: 
 # Output: 
 
+capscale_formula <- function(mod){
+  
+  return(
+    paste0("capscale(",
+           mod[[1]][["formula"]],
+           ", family=",
+           mod[[1]][["family"]][["family"]],
+           ")")
+  )
+}
 
 
-# -------------------------------------------------------------------------
+
+# GT Table Setting -------------------------------------------------------------------------
+# Description: sets default settings for a gt table
+# Input: dataframe, significant figures, variables to set threshold (single or multiple variables)
+# Output: 
+
+set_GT <- function(x, digits = 3, var){
+  x %>%
+    gt::gt() %>%
+      gt::fmt_number(
+        decimals = digits, # round to 3 decimal places
+        use_seps = FALSE
+      ) %>%
+      gt::sub_large_vals( # values above 0.25 will be simplified
+        columns = !!var,
+        threshold = 0.25) %>%
+      gt::sub_small_vals( # values below 0.001 will be simplified
+        columns = !!var,
+        threshold = 0.001)
+  }
+
+# Find columns -------------------------------------------------------------------------
 # Description: 
 # Input: 
 # Output: 
-
 
 
 
